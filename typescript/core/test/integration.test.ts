@@ -1,5 +1,6 @@
-import type { GetSignaturesForAddressApi, GetTransactionApi, Rpc } from '@solana/kit';
-import { address, generateKeyPairSigner, lamports, TransactionSigner } from '@solana/kit';
+import type { GetSignaturesForAddressApi, GetTransactionApi, Rpc, RpcSubscriptions } from '@solana/kit';
+import { generateKeyPairSigner, lamports, TransactionSigner } from '@solana/kit';
+import type { LogsNotificationsApi } from '@solana/rpc-subscriptions-api';
 import { createClient } from '@solana/kit-client-litesvm';
 import {
     findAssociatedTokenPda,
@@ -31,6 +32,13 @@ function withUnsupportedRpcStubs() {
                 return Reflect.get(target, prop, receiver);
             },
         }) as Rpc<GetSignaturesForAddressApi & GetTransactionApi> & T['rpc'],
+        rpcSubscriptions: new Proxy({} as RpcSubscriptions<object>, {
+            get(_, prop) {
+                return () => {
+                    throw new Error(`${String(prop)} is not supported by LiteSVM`);
+                };
+            },
+        }) as RpcSubscriptions<LogsNotificationsApi>,
     });
 }
 
@@ -45,7 +53,7 @@ async function createTestClient() {
 
 type TestClient = Awaited<ReturnType<typeof createTestClient>>;
 
-describe('Integration: SOL transfers', () => {
+describe.concurrent('Integration: SOL transfers', () => {
     let client: TestClient;
     let payer: TransactionSigner;
     let recipient: TransactionSigner;
