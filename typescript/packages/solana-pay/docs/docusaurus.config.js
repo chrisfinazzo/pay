@@ -29,7 +29,7 @@ const config = {
                     sidebarCollapsed: false,
                     path: 'src',
                     routeBasePath: '/',
-                    editUrl: 'https://github.com/solana-foundation/pay/tree/main/typescript/docs',
+                    editUrl: 'https://github.com/solana-foundation/pay/tree/main/typescript/packages/solana-pay/docs',
                 },
                 theme: {
                     customCss: require.resolve('./src/css/custom.css'),

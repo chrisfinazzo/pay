@@ -356,8 +356,8 @@ The steps outlined above prevents:
 [1]: https://github.com/nickvdyck/qr-code-styling
 [2]: https://spl.solana.com/memo
 [3]: https://github.com/solana-labs/solana/issues/19535
-[4]: https://github.com/solana-foundation/pay/tree/main/typescript/examples/point-of-sale
-[5]: https://github.com/solana-foundation/pay/tree/main/typescript/core/example
-[6]: https://github.com/solana-foundation/pay/blob/main/typescript/core/example/index.ts
-[7]: https://github.com/solana-foundation/pay/blob/main/typescript/core/example/index.ts
-[8]: https://github.com/solana-foundation/pay/blob/main/typescript/core/example/index.ts
+[4]: https://github.com/solana-foundation/pay/tree/main/typescript/packages/solana-pay/examples/point-of-sale
+[5]: https://github.com/solana-foundation/pay/tree/main/typescript/packages/solana-pay/core/example
+[6]: https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/core/example/index.ts
+[7]: https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/core/example/index.ts
+[8]: https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/core/example/index.ts

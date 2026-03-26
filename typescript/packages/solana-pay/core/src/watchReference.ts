@@ -29,7 +29,7 @@ export interface WatchReferenceResult {
  * as soon as a matching transaction lands.
  *
  * @param rpcSubscriptions - An RPC subscriptions client supporting `logsNotifications`.
- * @param reference - `reference` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#reference).
+ * @param reference - `reference` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#reference).
  * @param options - Options for the subscription.
  *
  * @throws {FindReferenceError} If the subscription is aborted before a transaction is found.

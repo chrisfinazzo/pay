@@ -38,7 +38,7 @@ export type FetchedTransaction = Transaction;
  *
  * @param rpc - An RPC client supporting `getLatestBlockhash`.
  * @param account - Address of the account that may sign the transaction.
- * @param link - `link` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#link).
+ * @param link - `link` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#link).
  * @param options - Options for `getLatestBlockhash`.
  *
  * @throws {FetchTransactionError}

@@ -36,7 +36,7 @@ export interface ConfirmedSignatureInfo {
  * Find the oldest transaction signature referencing a given address.
  *
  * @param rpc - An RPC client supporting `getSignaturesForAddress`.
- * @param reference - `reference` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#reference).
+ * @param reference - `reference` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#reference).
  * @param options - Options for `getSignaturesForAddress`.
  *
  * @throws {FindReferenceError}

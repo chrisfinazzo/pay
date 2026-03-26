@@ -25,10 +25,10 @@ The Solana blockchain confirms transactions in less than a second and costs on a
 ## How to use Solana Pay
 
 ### Accept payments in your web app
-Use the [`@solana/pay` JavaScript SDK](https://github.com/solana-foundation/pay/tree/main/typescript/core) to start accepting payments in your app today.
+Use the [`@solana/pay` JavaScript SDK](https://github.com/solana-foundation/pay/tree/main/typescript/packages/solana-pay/core) to start accepting payments in your app today.
 
 ### Accept payments in person
-Run the open-source [Solana Pay Point of Sale app](https://github.com/solana-foundation/pay/tree/main/typescript/examples/point-of-sale) to start accepting payments in-person.
+Run the open-source [Solana Pay Point of Sale app](https://github.com/solana-foundation/pay/tree/main/typescript/packages/solana-pay/examples/point-of-sale) to start accepting payments in-person.
 
 ## Getting Involved
 

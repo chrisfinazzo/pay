@@ -5,12 +5,12 @@ on:
     branches: [main]
 
 jobs:
-  # ── TypeScript SDK (typescript/core/) ──
+  # ── TypeScript SDK (typescript/packages/solana-pay/core/) ──
   core-test:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./typescript/core
+        working-directory: ./typescript/packages/solana-pay/core
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

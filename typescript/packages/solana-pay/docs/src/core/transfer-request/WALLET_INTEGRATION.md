@@ -143,6 +143,6 @@ URLs can be embedded in the environment in web pages, QR codes, NFC tags and pot
 
 <!-- References -->
 
-[9]: https://github.com/solana-foundation/pay/blob/main/typescript/core/example/index.ts
-[10]: https://github.com/solana-foundation/pay/blob/main/typescript/core/example/index.ts
-[11]: https://github.com/solana-foundation/pay/blob/main/typescript/core/example/index.ts
+[9]: https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/core/example/index.ts
+[10]: https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/core/example/index.ts
+[11]: https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/core/example/index.ts

@@ -43,7 +43,7 @@ jobs:
       NPM_CONFIG_PROVENANCE: true
     defaults:
       run:
-        working-directory: typescript/core
+        working-directory: typescript/packages/solana-pay/core
 
     steps:
       - name: Checkout repository
@@ -78,7 +78,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('typescript/core/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('typescript/packages/solana-pay/core/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 

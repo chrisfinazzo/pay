@@ -4,12 +4,12 @@ on:
   pull_request:
 
 jobs:
-  # ── TypeScript SDK (typescript/core/) ──
+  # ── TypeScript SDK (typescript/packages/solana-pay/core/) ──
   lint:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./typescript/core
+        working-directory: ./typescript/packages/solana-pay/core
 
     name: Lint, format, and typecheck
 
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./typescript/core
+        working-directory: ./typescript/packages/solana-pay/core
 
     strategy:
       matrix:

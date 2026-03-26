@@ -152,6 +152,6 @@ We recommend handling a customer session in a secure environment. Building a sec
 <!-- References -->
 
 [1]: https://nextjs.org/docs/api-routes/introduction
-[2]: https://github.com/solana-foundation/pay/tree/main/typescript/examples/point-of-sale
-[3]: https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#link
+[2]: https://github.com/solana-foundation/pay/tree/main/typescript/packages/solana-pay/examples/point-of-sale
+[3]: https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#link
 [4]: https://github.com/solana-foundation/pay

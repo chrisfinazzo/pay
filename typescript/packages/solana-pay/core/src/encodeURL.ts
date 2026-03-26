@@ -6,11 +6,11 @@ import { normalizeReferences } from './utils/reference.js';
  * Fields of a Solana Pay transaction request URL.
  */
 export interface TransactionRequestURLFields {
-    /** `link` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#link). */
+    /** `link` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#link). */
     link: URL;
-    /** `label` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#label-1). */
+    /** `label` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#label-1). */
     label?: Label;
-    /** `message` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#message-1).  */
+    /** `message` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#message-1).  */
     message?: Message;
 }
 
@@ -18,19 +18,19 @@ export interface TransactionRequestURLFields {
  * Fields of a Solana Pay transfer request URL.
  */
 export interface TransferRequestURLFields {
-    /** `recipient` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#recipient). */
+    /** `recipient` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#recipient). */
     recipient: Recipient;
-    /** `amount` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#amount). */
+    /** `amount` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#amount). */
     amount?: Amount;
-    /** `spl-token` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#spl-token). */
+    /** `spl-token` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#spl-token). */
     splToken?: SPLToken;
-    /** `reference` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#reference). */
+    /** `reference` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#reference). */
     reference?: References;
-    /** `label` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#label). */
+    /** `label` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#label). */
     label?: Label;
-    /** `message` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#message).  */
+    /** `message` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#message).  */
     message?: Message;
-    /** `memo` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/spec/SPEC.md#memo). */
+    /** `memo` in the [Solana Pay spec](https://github.com/solana-foundation/pay/blob/main/typescript/packages/solana-pay/spec/SPEC.md#memo). */
     memo?: Memo;
 }
 
