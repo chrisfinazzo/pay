@@ -43,7 +43,7 @@ jobs:
       NPM_CONFIG_PROVENANCE: true
     defaults:
       run:
-        working-directory: typescript/packages/solana-pay/core
+        working-directory: ./typescript
 
     steps:
       - name: Checkout repository
@@ -67,6 +67,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
+          version: 10
           run_install: false
 
       - name: Get pnpm store directory
@@ -78,7 +79,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('typescript/packages/solana-pay/core/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('typescript/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
@@ -91,6 +92,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Publishing version: $VERSION"
+        working-directory: typescript/packages/solana-pay/core
 
       - name: Check if prerelease
         id: prerelease
@@ -106,12 +108,13 @@ jobs:
         working-directory: .
 
       - name: Build
-        run: pnpm build
+        run: pnpm --filter @solana/pay build
 
       - name: Type check
-        run: pnpm typecheck
+        run: pnpm --filter @solana/pay typecheck
 
       - name: Pack package
+        working-directory: typescript/packages/solana-pay/core
         run: |
           mkdir -p .npm-pack
           pnpm pack --pack-destination .npm-pack
@@ -120,6 +123,7 @@ jobs:
           ls -la .npm-pack/
 
       - name: "Guard - Fail if tarball contains workspace: protocol"
+        working-directory: typescript/packages/solana-pay/core
         run: |
           echo "Checking tarball for workspace: protocol..."
 
@@ -136,6 +140,7 @@ jobs:
           echo "All tarballs are clean (no workspace: dependencies)"
 
       - name: Guard - Fail if tarball missing dist/ artifacts
+        working-directory: typescript/packages/solana-pay/core
         run: |
           echo "Checking tarball for dist/ artifacts..."
 
@@ -171,6 +176,7 @@ jobs:
 
       - name: Publish to npm
         if: ${{ github.event.inputs.publish-to-npm == 'true' }}
+        working-directory: typescript/packages/solana-pay/core
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           NPM_TAG="${{ steps.prerelease.outputs.npm_tag }}"
