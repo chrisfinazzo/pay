@@ -118,3 +118,229 @@ pub fn error_response(status: StatusCode, message: &str) -> Response {
         .body(Body::from(serde_json::to_string(&body).unwrap()))
         .unwrap()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_api(subdomain: &str) -> ApiSpec {
+        ApiSpec {
+            name: "test".to_string(),
+            subdomain: subdomain.to_string(),
+            title: "Test".to_string(),
+            description: "".to_string(),
+            category: pay_types::metering::ApiCategory::AiMl,
+            version: "1.0".to_string(),
+            base_url: "https://api.example.com".to_string(),
+            accounting: pay_types::metering::AccountingMode::Pooled,
+            endpoints: vec![],
+            free_tier: None,
+            quotas: None,
+            notes: None,
+        }
+    }
+
+    #[test]
+    fn resolve_api_finds_matching_subdomain() {
+        let apis = vec![make_api("vision"), make_api("translate")];
+        let result = resolve_api(&apis, "vision.agents.solana.com");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().subdomain, "vision");
+    }
+
+    #[test]
+    fn resolve_api_no_match() {
+        let apis = vec![make_api("vision")];
+        let result = resolve_api(&apis, "translate.agents.solana.com");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn resolve_api_empty_list() {
+        let apis: Vec<ApiSpec> = vec![];
+        assert!(resolve_api(&apis, "vision.agents.solana.com").is_none());
+    }
+
+    #[test]
+    fn error_response_has_correct_status() {
+        let resp = error_response(StatusCode::BAD_GATEWAY, "upstream error");
+        assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[test]
+    fn error_response_has_json_content_type() {
+        let resp = error_response(StatusCode::INTERNAL_SERVER_ERROR, "oops");
+        let ct = resp.headers().get("content-type").unwrap();
+        assert_eq!(ct, "application/json");
+    }
+
+    #[test]
+    fn strip_headers_contains_expected() {
+        assert!(STRIP_HEADERS.contains(&"host"));
+        assert!(STRIP_HEADERS.contains(&"authorization"));
+        assert!(STRIP_HEADERS.contains(&"connection"));
+    }
+
+    /// Spin up a one-shot axum server, return its base URL.
+    async fn spawn_upstream(handler: axum::Router) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let url = format!("http://{addr}");
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, handler).await.ok();
+        });
+        // Give the server a moment to bind
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        (url, handle)
+    }
+
+    #[tokio::test]
+    async fn forward_request_get() {
+        let app = axum::Router::new().route(
+            "/v1/test",
+            axum::routing::get(|| async { "hello from upstream" }),
+        );
+        let (base_url, _handle) = spawn_upstream(app).await;
+
+        let api = ApiSpec {
+            base_url: base_url.clone(),
+            ..make_api("test")
+        };
+
+        let uri: Uri = format!("{base_url}/v1/test").parse().unwrap();
+        let result =
+            forward_request(&api, Method::GET, &uri, &HeaderMap::new(), Bytes::new()).await;
+
+        let resp = result.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        assert_eq!(&body[..], b"hello from upstream");
+    }
+
+    #[tokio::test]
+    async fn forward_request_post_with_body() {
+        let app = axum::Router::new().route(
+            "/v1/echo",
+            axum::routing::post(|body: String| async move { format!("echo: {body}") }),
+        );
+        let (base_url, _handle) = spawn_upstream(app).await;
+
+        let api = ApiSpec {
+            base_url: base_url.clone(),
+            ..make_api("test")
+        };
+
+        let uri: Uri = format!("{base_url}/v1/echo").parse().unwrap();
+        let body = Bytes::from("test payload");
+        let mut headers = HeaderMap::new();
+        headers.insert("content-type", "text/plain".parse().unwrap());
+
+        let result = forward_request(&api, Method::POST, &uri, &headers, body).await;
+
+        let resp = result.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        assert_eq!(&body[..], b"echo: test payload");
+    }
+
+    #[tokio::test]
+    async fn forward_request_strips_auth_header() {
+        use std::sync::{Arc, Mutex};
+
+        let received_headers: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = received_headers.clone();
+
+        let app = axum::Router::new().route(
+            "/v1/check",
+            axum::routing::get(move |headers: axum::http::HeaderMap| {
+                let keys: Vec<String> = headers.keys().map(|k| k.to_string()).collect();
+                captured.lock().unwrap().extend(keys);
+                async { "ok" }
+            }),
+        );
+        let (base_url, _handle) = spawn_upstream(app).await;
+
+        let api = ApiSpec {
+            base_url: base_url.clone(),
+            ..make_api("test")
+        };
+
+        let uri: Uri = format!("{base_url}/v1/check").parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer secret".parse().unwrap());
+        headers.insert("x-custom", "kept".parse().unwrap());
+
+        let result = forward_request(&api, Method::GET, &uri, &headers, Bytes::new()).await;
+        assert!(result.is_ok());
+
+        let fwd = received_headers.lock().unwrap();
+        assert!(!fwd.contains(&"authorization".to_string()));
+        assert!(fwd.contains(&"x-custom".to_string()));
+    }
+
+    #[tokio::test]
+    async fn forward_request_preserves_status_code() {
+        let app = axum::Router::new().route(
+            "/v1/notfound",
+            axum::routing::get(|| async { (StatusCode::NOT_FOUND, "nope") }),
+        );
+        let (base_url, _handle) = spawn_upstream(app).await;
+
+        let api = ApiSpec {
+            base_url: base_url.clone(),
+            ..make_api("test")
+        };
+
+        let uri: Uri = format!("{base_url}/v1/notfound").parse().unwrap();
+        let result =
+            forward_request(&api, Method::GET, &uri, &HeaderMap::new(), Bytes::new()).await;
+
+        assert_eq!(result.unwrap().status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn forward_request_upstream_down() {
+        let api = ApiSpec {
+            base_url: "http://127.0.0.1:1".to_string(), // nothing listening
+            ..make_api("test")
+        };
+
+        let uri: Uri = "http://127.0.0.1:1/v1/test".parse().unwrap();
+        let result =
+            forward_request(&api, Method::GET, &uri, &HeaderMap::new(), Bytes::new()).await;
+
+        // Should return an error response (502 Bad Gateway)
+        let err_resp = result.unwrap_err();
+        assert_eq!(err_resp.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[tokio::test]
+    async fn forward_request_preserves_query_string() {
+        let app = axum::Router::new().route(
+            "/v1/search",
+            axum::routing::get(|uri: axum::http::Uri| async move {
+                uri.query().unwrap_or("none").to_string()
+            }),
+        );
+        let (base_url, _handle) = spawn_upstream(app).await;
+
+        let api = ApiSpec {
+            base_url: base_url.clone(),
+            ..make_api("test")
+        };
+
+        let uri: Uri = format!("{base_url}/v1/search?q=hello&limit=10")
+            .parse()
+            .unwrap();
+        let result =
+            forward_request(&api, Method::GET, &uri, &HeaderMap::new(), Bytes::new()).await;
+
+        let resp = result.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let qs = String::from_utf8(body.to_vec()).unwrap();
+        assert!(qs.contains("q=hello"));
+        assert!(qs.contains("limit=10"));
+    }
+}
