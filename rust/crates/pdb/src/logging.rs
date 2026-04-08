@@ -14,7 +14,7 @@ use crate::types::LogEntry;
 /// Axum middleware that logs every proxied request/response into the correlation engine.
 ///
 /// Must be the outermost layer so it sees the full lifecycle including 402 challenges.
-/// Skips `/__debugger/` and `/__gateway/` paths.
+/// Skips `/__402/` paths.
 ///
 /// Uses `Extension<Option<PdbState>>` — no-op when debugger is disabled.
 pub async fn logging_middleware(
@@ -29,7 +29,7 @@ pub async fn logging_middleware(
     let path = req.uri().path().to_string();
 
     // Skip internal paths
-    if path.starts_with("/__debugger") || path.starts_with("/__gateway") {
+    if path.starts_with("/__402") {
         return next.run(req).await;
     }
 
@@ -56,9 +56,10 @@ pub async fn logging_middleware(
     let status = response.status().as_u16();
     let res_headers = extract_headers(response.headers());
 
-    // Consume body to capture it, then re-wrap (capped at 16KB).
+    // Consume body to capture it, then re-wrap.
+    // Use 256KB limit to handle HTML payment pages (~50KB).
     let (parts, body) = response.into_parts();
-    let bytes = axum::body::to_bytes(body, 16 * 1024)
+    let bytes = axum::body::to_bytes(body, 256 * 1024)
         .await
         .unwrap_or_default();
 

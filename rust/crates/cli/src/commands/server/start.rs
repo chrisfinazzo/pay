@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::middleware;
 use axum::response::IntoResponse;
-use axum::routing::{any, get};
+use axum::routing::{any, get, post};
 use owo_colors::OwoColorize;
 use pay_core::PaymentState;
 use pay_types::metering::ApiSpec;
@@ -178,22 +178,11 @@ impl StartCommand {
                 ));
             };
 
-            // ── Sandbox: auto-airdrop SOL to operator wallet ──
-            if self.sandbox {
-                if let Some(ref signer) = fee_payer_signer {
-                    let pubkey = signer.pubkey().to_string();
-                    eprintln!(
-                        "  {} checking balance for {}…",
-                        "sandbox".yellow().bold(),
-                        &pubkey[..8]
-                    );
-                    sandbox_airdrop(&rpc_url, &pubkey).await;
-                } else {
-                    eprintln!(
-                        "  {} no fee payer signer — skipping airdrop",
-                        "sandbox".yellow().bold()
-                    );
-                }
+            // ── Sandbox: bootstrap operator wallet (SOL + token account) ──
+            if self.sandbox && let Some(ref signer) = fee_payer_signer {
+                let pubkey = signer.pubkey().to_string();
+                sandbox_airdrop(&rpc_url, &pubkey).await;
+                sandbox_bootstrap_recipient(&rpc_url, &recipient, &currency).await;
             }
 
             // ── Create MPP server ──
@@ -212,6 +201,7 @@ impl StartCommand {
                 secret_key: Some(secret_key),
                 fee_payer,
                 fee_payer_signer,
+                html: true,
                 ..Default::default()
             })
             .map_err(|e| pay_core::Error::Config(format!("Failed to create MPP server: {e}")))?;
@@ -225,16 +215,52 @@ impl StartCommand {
             let free_count = api.endpoints.len() - metered_count;
 
             eprintln!();
-            eprintln!("  {} {}", "pay server".bold(), api.title.bold());
+            eprintln!("  {}   {}", "╔═╗ ╔═╗ ╦ ╦".bold(), "╔═╗ ╦ ╦".dimmed());
+            eprintln!("  {}   {}", "╠═╝ ╠═╣ ╚╦╝".bold(), "╚═╗ ╠═╣".dimmed());
+            eprintln!("  {}  {} {}", "╩   ╩ ╩  ╩".bold(), "○".dimmed(), "╚═╝ ╩ ╩".dimmed());
+            eprintln!("  {}", "Developer Tools for Programmable Payments".dimmed());
             eprintln!();
-            eprintln!("  {}  {}", "upstream".dimmed(), api.forward.display_url());
-            eprintln!(
-                "  {}  {}",
-                "wallet  ".dimmed(),
-                recipient.chars().take(8).collect::<String>().dimmed()
+
+            // Network link
+            let network_label = if sandbox { "sandbox" } else { &network };
+            let network_url = if sandbox {
+                if rpc_url.contains("localhost") || rpc_url.contains("127.0.0.1") {
+                    "http://localhost:18488".to_string()
+                } else {
+                    rpc_url.clone()
+                }
+            } else {
+                "https://explorer.solana.com".to_string()
+            };
+            let network_link = terminal_link(network_label, &network_url);
+
+            // Operator link (explorer token page)
+            let short_recipient = if recipient.len() > 8 {
+                format!("{}...{}", &recipient[..4], &recipient[recipient.len() - 4..])
+            } else {
+                recipient.clone()
+            };
+            let encoded_rpc = urlencoding::encode(&rpc_url);
+            let operator_url = format!(
+                "https://explorer.solana.com/address/{}/tokens?cluster=custom&customUrl={}",
+                recipient, encoded_rpc
             );
-            eprintln!("  {} {}", "currency".dimmed(), self.currency.green());
-            eprintln!("  {}      {}", "rpc".dimmed(), rpc_url.dimmed());
+            let operator_link = terminal_link(&short_recipient, &operator_url);
+
+            eprintln!("  {}\t{}", "network".dimmed(), network_link);
+            eprintln!(
+                "  {}\t{} via {}",
+                "currency".dimmed(),
+                "$".green(),
+                currency.green()
+            );
+            let balance_suffix = if sandbox {
+                let bal = fetch_sol_balance(&rpc_url, &recipient).await;
+                format!(" ({} SOL)", format_price(bal))
+            } else {
+                String::new()
+            };
+            eprintln!("  {}\t{}{}", "operator".dimmed(), operator_link, balance_suffix.dimmed());
             eprintln!();
 
             eprintln!(
@@ -285,7 +311,7 @@ impl StartCommand {
                                 .map(|t| t.price_usd)
                         })
                         .unwrap_or(0.0);
-                    format!("{:>8}", format!("${:.4}", price))
+                    format!("{:>8}", format!("${}", format_price(price)))
                         .yellow()
                         .to_string()
                 } else {
@@ -308,17 +334,12 @@ impl StartCommand {
             // ── Build router ──
             let endpoints_json = build_endpoints_json(&api);
 
+            let verify_mpp = mpp.clone();
+
             let state = AppState {
                 apis: Arc::new(vec![api.clone()]),
                 mpp: Some(mpp),
             };
-
-            let mut app = axum::Router::new()
-                .route("/__gateway/health", get(|| async { "ok" }))
-                .route(
-                    "/__gateway/endpoints",
-                    get(move || async move { axum::Json(endpoints_json).into_response() }),
-                );
 
             let pdb_state = if debugger {
                 let pdb_config = build_pdb_config(&api, &recipient, &network, &rpc_url);
@@ -328,6 +349,20 @@ impl StartCommand {
             } else {
                 None
             };
+
+            let verify_pdb = pdb_state.clone();
+            let mut app = axum::Router::new()
+                .route("/__402/health", get(|| async { "ok" }))
+                .route(
+                    "/__402/endpoints",
+                    get(move || async move { axum::Json(endpoints_json).into_response() }),
+                )
+                .route(
+                    "/__402/verify",
+                    post(move |body: axum::Json<GatewayVerifyRequest>| async move {
+                        gateway_verify(verify_mpp, body.0, verify_pdb.as_ref()).await
+                    }),
+                );
 
             if let Some(ref pdb) = pdb_state {
                 app = app
@@ -339,7 +374,7 @@ impl StartCommand {
                                 .and_then(|v| v.to_str().ok())
                                 .is_some_and(|v| v.contains("text/html"));
                             if accepts_html {
-                                axum::response::Redirect::temporary("/__debugger/")
+                                axum::response::Redirect::temporary("/__402/pdb/")
                                     .into_response()
                             } else {
                                 axum::Json(serde_json::json!({"status": "ok"})).into_response()
@@ -347,7 +382,7 @@ impl StartCommand {
                         }),
                     )
                     .nest_service(
-                        "/__debugger",
+                        "/__402/pdb",
                     pay_pdb::debugger_router(pdb.clone()),
                 );
             }
@@ -387,17 +422,18 @@ impl StartCommand {
                 .map_err(|e| {
                     pay_core::Error::Config(format!("Failed to bind {}: {e}", self.bind))
                 })?;
+            let display_addr = self.bind.replace("0.0.0.0", "127.0.0.1");
             if debugger {
                 eprintln!(
                     "  {} {}",
                     "debugger".green().bold(),
-                    format!("http://{}", self.bind).bold()
+                    format!("http://{}", display_addr).bold()
                 );
             } else {
                 eprintln!(
                     "  {} {}",
                     "listening".green().bold(),
-                    format!("http://{}", self.bind).bold()
+                    format!("http://{}", display_addr).bold()
                 );
             }
             eprintln!();
@@ -437,7 +473,7 @@ fn build_endpoints_json(api: &ApiSpec) -> serde_json::Value {
         "name": api.name,
         "title": api.title,
         "forward": {
-            "url": api.forward.display_url(),
+            "url": api.routing.display_url(),
         },
         "endpoints": endpoints,
     })
@@ -460,7 +496,7 @@ fn build_pdb_config(
                 .as_ref()
                 .and_then(|m| m.dimensions.first())
                 .and_then(|d| d.tiers.first())
-                .map(|t| format!("${:.4}", t.price_usd))
+                .map(|t| format!("${}", format_price(t.price_usd)))
                 .unwrap_or_else(|| "metered".into());
             serde_json::json!({
                 "method": format!("{:?}", e.method).to_uppercase(),
@@ -535,31 +571,10 @@ async fn resolve_signer(config: &SignerConfig) -> pay_core::Result<Arc<dyn Solan
 /// Check SOL balance and request airdrop if below 1 SOL.
 async fn sandbox_airdrop(rpc_url: &str, pubkey: &str) {
     let client = reqwest::Client::new();
-    let balance_resp = client
-        .post(rpc_url)
-        .json(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getBalance",
-            "params": [pubkey]
-        }))
-        .send()
-        .await;
-    let balance_lamports = match balance_resp {
-        Ok(r) => r
-            .json::<serde_json::Value>()
-            .await
-            .ok()
-            .and_then(|v| v["result"]["value"].as_u64())
-            .unwrap_or(0),
-        Err(_) => 0,
-    };
-    let balance_sol = balance_lamports as f64 / 1_000_000_000.0;
-    eprintln!("  {}  {:.4} SOL", "balance".dimmed(), balance_sol);
+    let balance_lamports = fetch_lamports(&client, rpc_url, pubkey).await;
 
     if balance_lamports < 1_000_000_000 {
-        eprintln!("  {} requesting airdrop…", "sandbox".yellow().bold());
-        let airdrop_resp = client
+        let _ = client
             .post(rpc_url)
             .json(&serde_json::json!({
                 "jsonrpc": "2.0",
@@ -569,23 +584,298 @@ async fn sandbox_airdrop(rpc_url: &str, pubkey: &str) {
             }))
             .send()
             .await;
-        match airdrop_resp {
-            Ok(r) => {
-                let body: serde_json::Value = r.json().await.unwrap_or_default();
-                if body.get("error").is_some() {
-                    eprintln!(
-                        "  {} airdrop failed: {}",
-                        "sandbox".yellow().bold(),
-                        body["error"]["message"]
-                    );
-                } else {
-                    eprintln!("  {} +2 SOL airdropped", "sandbox".green().bold());
+    }
+}
+
+async fn fetch_lamports(client: &reqwest::Client, rpc_url: &str, pubkey: &str) -> u64 {
+    let resp = client
+        .post(rpc_url)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getBalance",
+            "params": [pubkey]
+        }))
+        .send()
+        .await;
+    match resp {
+        Ok(r) => r
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|v| v["result"]["value"].as_u64())
+            .unwrap_or(0),
+        Err(_) => 0,
+    }
+}
+
+async fn fetch_sol_balance(rpc_url: &str, pubkey: &str) -> f64 {
+    let client = reqwest::Client::new();
+    fetch_lamports(&client, rpc_url, pubkey).await as f64 / 1_000_000_000.0
+}
+
+/// Bootstrap the recipient's token account on the sandbox so SPL transfers succeed.
+async fn sandbox_bootstrap_recipient(rpc_url: &str, recipient: &str, currency: &str) {
+    let (mint, token_program) = match currency.to_uppercase().as_str() {
+        "SOL" => return, // Native SOL doesn't need a token account
+        "USDC" => (
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        ),
+        _ => return,
+    };
+
+    let client = reqwest::Client::new();
+
+    // Set SOL balance so the account exists
+    let _ = client
+        .post(rpc_url)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "surfnet_setAccount",
+            "params": [recipient, {
+                "lamports": 1_000_000_000_u64,
+                "data": "",
+                "executable": false,
+                "owner": "11111111111111111111111111111111",
+            }]
+        }))
+        .send()
+        .await;
+
+    // Create token account with zero balance
+    let _ = client
+        .post(rpc_url)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "surfnet_setTokenAccount",
+            "params": [recipient, mint, {
+                "amount": 0,
+            }, token_program]
+        }))
+        .send()
+        .await;
+}
+
+fn format_price(price: f64) -> String {
+    if price.fract() == 0.0 {
+        format!("{}", price as u64)
+    } else {
+        let s = format!("{:.4}", price);
+        s.trim_end_matches('0').to_string()
+    }
+}
+
+/// Emit an OSC 8 clickable hyperlink for terminals that support it.
+fn terminal_link(text: &str, url: &str) -> String {
+    format!("\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\", url, text)
+}
+
+// ── Gateway verify endpoint ──
+
+#[derive(serde::Deserialize)]
+struct GatewayVerifyRequest {
+    method: String,
+    path: String,
+    price: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    authorization: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    request_id: Option<String>,
+    #[serde(default)]
+    external_id: Option<String>,
+    /// JSON-encoded splits array from the gateway (assembled by JS policy).
+    #[serde(default)]
+    splits_json: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct GatewayVerifyResponse {
+    decision: String,
+    status_code: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    www_authenticate: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    receipt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    receipt_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    receipt_reference: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    challenge_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_id: Option<String>,
+}
+
+async fn gateway_verify(
+    mpp: Mpp,
+    req: GatewayVerifyRequest,
+    pdb: Option<&pay_pdb::PdbState>,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use solana_mpp::{format_receipt, format_www_authenticate, parse_authorization};
+
+    let auth = req
+        .authorization
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+
+    // Parse splits from JSON string (assembled by Apigee JS policy).
+    let splits: Vec<solana_mpp::protocol::solana::Split> = req
+        .splits_json
+        .as_deref()
+        .filter(|s| !s.is_empty() && *s != "[]")
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+
+    match auth {
+        None => {
+            let challenge = match mpp.charge_with_options(
+                &req.price,
+                solana_mpp::server::ChargeOptions {
+                    description: req.description.as_deref(),
+                    external_id: req.external_id.as_deref(),
+                    splits: splits.clone(),
+                    ..Default::default()
+                },
+            ) {
+                Ok(c) => c,
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        axum::Json(serde_json::json!({"error": e.to_string()})),
+                    )
+                        .into_response();
+                }
+            };
+            let www_auth = format_www_authenticate(&challenge).unwrap_or_default();
+
+            // Log 402 challenge to PDB
+            if let Some(pdb) = pdb {
+                let mut res_headers = std::collections::HashMap::new();
+                res_headers.insert("www-authenticate".to_string(), www_auth.clone());
+                let entry = pay_pdb::types::LogEntry {
+                    id: pdb.next_log_id(),
+                    ts: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                    method: req.method.clone(),
+                    path: req.path.clone(),
+                    status: 402,
+                    ms: 0,
+                    req_headers: std::collections::HashMap::new(),
+                    res_headers,
+                    res_body: None,
+                    client_ip: "gateway".to_string(),
+                };
+                pdb.correlation.lock().unwrap().ingest(entry);
+            }
+
+            axum::Json(GatewayVerifyResponse {
+                decision: "payment_required".to_string(),
+                status_code: 402,
+                www_authenticate: Some(www_auth),
+                body: Some(serde_json::json!({
+                    "error": "payment_required",
+                    "endpoint": { "method": req.method, "path": req.path },
+                })),
+                challenge_id: Some(challenge.id),
+                external_id: req.external_id,
+                receipt: None,
+                receipt_status: None,
+                receipt_reference: None,
+            })
+            .into_response()
+        }
+        Some(auth_value) => {
+            let credential = match parse_authorization(auth_value) {
+                Ok(c) => c,
+                Err(e) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        axum::Json(serde_json::json!({"error": e.to_string()})),
+                    )
+                        .into_response();
+                }
+            };
+            match mpp.verify_credential(&credential).await {
+                Ok(receipt) => {
+                    let encoded = format_receipt(&receipt).unwrap_or_default();
+
+                    // Log successful payment to PDB
+                    if let Some(pdb) = pdb {
+                        let mut req_headers = std::collections::HashMap::new();
+                        req_headers.insert(
+                            "authorization".to_string(),
+                            format!("Payment {}", auth_value),
+                        );
+                        let entry = pay_pdb::types::LogEntry {
+                            id: pdb.next_log_id(),
+                            ts: chrono::Utc::now()
+                                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                            method: req.method.clone(),
+                            path: req.path.clone(),
+                            status: 200,
+                            ms: 0,
+                            req_headers,
+                            res_headers: std::collections::HashMap::new(),
+                            res_body: None,
+                            client_ip: "gateway".to_string(),
+                        };
+                        pdb.correlation.lock().unwrap().ingest(entry);
+                    }
+
+                    axum::Json(GatewayVerifyResponse {
+                        decision: "allow".to_string(),
+                        status_code: 200,
+                        receipt: Some(encoded),
+                        receipt_status: Some(receipt.status.to_string()),
+                        receipt_reference: Some(receipt.reference),
+                        challenge_id: Some(receipt.challenge_id),
+                        external_id: req.external_id,
+                        www_authenticate: None,
+                        body: None,
+                    })
+                    .into_response()
+                }
+                Err(error) => {
+                    // Re-issue challenge on failure
+                    let challenge = mpp
+                        .charge_with_options(
+                            &req.price,
+                            solana_mpp::server::ChargeOptions {
+                                description: req.description.as_deref(),
+                                external_id: req.external_id.as_deref(),
+                                splits,
+                                ..Default::default()
+                            },
+                        )
+                        .ok();
+                    let www_auth = challenge
+                        .as_ref()
+                        .and_then(|c| format_www_authenticate(c).ok());
+                    axum::Json(GatewayVerifyResponse {
+                        decision: "payment_required".to_string(),
+                        status_code: 402,
+                        www_authenticate: www_auth,
+                        body: Some(serde_json::json!({
+                            "error": "verification_failed",
+                            "message": error.to_string(),
+                            "retryable": error.retryable,
+                        })),
+                        challenge_id: challenge.map(|c| c.id),
+                        external_id: req.external_id,
+                        receipt: None,
+                        receipt_status: Some("failed".to_string()),
+                        receipt_reference: None,
+                    })
+                    .into_response()
                 }
             }
-            Err(e) => eprintln!(
-                "  {} airdrop request failed: {e}",
-                "sandbox".yellow().bold()
-            ),
         }
     }
 }
