@@ -2,7 +2,7 @@
 
 **The missing payment layer for HTTP. `pay` handles x402 and MPP payment challenges with user-authorized stablecoin signing.**
 
-Wrap your CLI (`curl`, `claude`, `codex`, etc.) -- when a stablecoin-gated API returns 402, `pay` detects the payment protocol, prepares the stablecoin transaction, asks the local wallet to authorize and sign it, then retries with the payment proof.
+Wrap a selected set of command line tools (`curl`, `claude`, `codex`, `whoami`, etc.) -- when a stablecoin-gated API returns 402, `pay` detects the payment protocol, prepares the stablecoin transaction, asks the local wallet to authorize and sign it, then retries with the payment proof.
 
 [Install](#installation) · [Quick Start](#quick-start) · [Docs](https://docs.solanapay.com)
 
@@ -30,25 +30,14 @@ Supports both live payment standards on Solana:
 
 Stablecoins deployed to Solana are supported out of the box.
 
-### 🗺️ Skills — Discover Paid APIs
-
-Browse, search, and install catalogs of paid API providers directly from the CLI.
-
-```sh
-pay skills search "gemini"          # find providers by keyword
-pay skills endpoints stableenrich   # list all endpoints for a service
-pay skills add org/catalog          # add a provider source (GitHub or URL)
-pay skills update                   # refresh the local cache
-```
-
 ### 🤖 AI-Native with MCP
 
 `pay` ships with a built-in [MCP](https://modelcontextprotocol.io/) server, letting AI assistants request paid API calls through the same local wallet-approval flow.
 
 ```sh
 # Run Claude Code or Codex with pay injected into the agent session
-pay --sandbox claude
-pay --sandbox codex
+pay claude
+pay codex
 ```
 
 ### 🛠️ Payment debugging and simulations
@@ -67,18 +56,13 @@ pay server demo
 
 A [public debugger](https://debugger.pay.sh) is also available.
 
-### 🔐 Secure Key Storage
+### 🔐 Gated Payments via Biometrics
 
-Your keys never touch disk in plaintext. `pay` stores keypairs in secure local credential stores:
+`pay` lets AI agents use paid APIs without giving them your private key or an API-wide spending credential.
 
-- **macOS Keychain** with optional Touch ID biometric prompt (macOS)
-- **Windows Credential Manager** with optional Windows Hello prompt (Windows)
-- **GNOME Keyring** via Secret Service / polkit prompt (Linux)
-- **1Password** vault via `op` CLI — auth handled by 1Password itself (cross-platform)
-- **File-based** keypair for CI and scripting
+When a command, Claude Code, Codex, or another MCP client hits a paid endpoint, `pay` prepares the payment locally and asks your wallet backend to authorize the signature. On macOS, that means Touch ID via Keychain. On Windows, Windows Hello. On Linux, GNOME Keyring / polkit. If you reject the prompt, the payment is not signed and the request does not go through.
 
-For protected accounts, payment signing requires local user approval, such as Touch ID on macOS. The biometric/password prompt is controlled per-account by the `auth_required` setting -- defaults to `true` on mainnet, `false` elsewhere.
-
+  
 ```sh
 pay setup    # Touch ID on macOS, Windows Hello on Windows, GNOME Keyring on Linux, or choose 1Password
 ```
@@ -88,7 +72,11 @@ pay setup    # Touch ID on macOS, Windows Hello on Windows, GNOME Keyring on Lin
 ### Prebuilt Binaries
 
 ```sh
+# macOS
 brew install pay
+
+# via NPM
+npm install -g @solana/pay
 ```
 
 ### From Source
@@ -108,14 +96,15 @@ pay --version
 ## Quick Start
 
 ```sh
-# 1. Generate a keypair (Touch ID protected on macOS)
+# 1. Setup your account
 pay setup
+pay whoami
 
-# 2. Make a paid API call (--sandbox uses an ephemeral funded keypair)
+# 2. Make a paid gated API call to https://debugger.pay.sh sandbox endpoints
 pay --sandbox curl https://debugger.pay.sh/mpp/quote/AAPL
 
 # 3. Or let your AI agent handle it
-pay --sandbox claude
+pay claude
 ```
 
 ## Contributing
